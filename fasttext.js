@@ -11,11 +11,13 @@
  * 
  * Copyright (c) 2021-present, av-virlan
  * 
- * Source code modified to support overriding the fetch functionality
- * So that you can pass it as a byte[] from the JS code
+ * Source code modified to load the module file from base64 encoded file
  */
 
 const fastTextModularized = require('./fasttext_wasm.js');
+
+let fastTextModel;
+try { fastTextModel = require('./fasttext_model.js') } catch { };
 
 var fastTextModule = null
 
@@ -56,9 +58,19 @@ const getFloat32ArrayFromHeap = (len) => {
 const heapToFloat32 = (r) => new Float32Array(r.buffer, r.ptr, r.size);
 
 class FastText {
-  constructor(fetchFunc) {
+  constructor() {
     this.f = new fastTextModule.FastText();
-    this.fetch = fetchFunc;
+  }
+
+  getModelBuffer(url) {
+    return new Promise(function (resolve) {
+      if (!fastTextModel) {
+        const fetchFunc = (thisModule && thisModule.fetch) || fetch;
+        fetchFunc(url).then(response => resolve(response.arrayBuffer));
+      } else {
+        resolve(Buffer.from(fastTextModel.ModelBase64, 'base64').buffer);
+      };
+    });
   }
 
   /**
@@ -74,13 +86,10 @@ class FastText {
    *
    */
   loadModel(url) {
-    const fetchFunc = (thisModule && thisModule.fetch) || fetch;
-
     const fastTextNative = this.f;
+    const getModelBuffer = this.getModelBuffer;
     return new Promise(function (resolve, reject) {
-      fetchFunc(url).then(response => {
-        return response.arrayBuffer();
-      }).then(bytes => {
+      getModelBuffer(url).then(bytes => {
         const byteArray = new Uint8Array(bytes);
         const FS = fastTextModule.FS;
         FS.writeFile(modelFileInWasmFs, byteArray);
